@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Walmart Team Quiz Show 🏆</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            walmart: { blue: '#0053e2', blueHover: '#004ac7', blueDark: '#003a99', spark: '#ffc220', sparkDark: '#995213' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
+    @keyframes confetti { 0% { opacity: 1; transform: translateY(0) rotate(0deg); } 100% { opacity: 0; transform: translateY(400px) rotate(720deg); } }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+    @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(0,83,226,0.4); } 100% { box-shadow: 0 0 0 20px rgba(0,83,226,0); } }
+    .fade-in { animation: fadeIn 0.4s ease-out; }
+    .pop { animation: pop 0.3s ease-out; }
+    .shake { animation: shake 0.4s ease; }
+    .confetti-piece { position: fixed; width: 10px; height: 10px; top: -10px; animation: confetti 3s ease-out forwards; pointer-events: none; z-index: 100; }
+    .option-btn { transition: all 0.2s ease; }
+    .option-btn:hover:not(:disabled) { transform: translateX(6px); box-shadow: 0 4px 12px rgba(0,83,226,0.15); }
+    .progress-fill { transition: width 0.5s ease; }
+    .buzzer-btn { transition: all 0.15s ease; }
+    .buzzer-btn:active:not(:disabled) { transform: scale(0.95); }
+    .timer-ring { width: 70px; height: 70px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-walmart-blue text-white py-4 shadow-lg">
+    <div class="max-w-3xl mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-walmart-spark text-3xl" aria-hidden="true">✦</span>
+        <h1 class="text-2xl font-bold tracking-tight">Walmart Team Quiz Show</h1>
+      </div>
+      <div class="text-sm font-medium bg-white/15 rounded-full px-4 py-1.5">
+        🏆 Speed = Points!
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-8">
+
+    <!-- Setup Screen: Add Team Members -->
+    <div id="setup-screen" class="fade-in">
+      <div class="bg-white rounded-2xl shadow-lg p-10 border border-gray-100 text-center">
+        <div class="text-7xl mb-6" aria-hidden="true">🏆</div>
+        <h2 class="text-3xl font-bold text-gray-800 mb-2">Walmart Team Quiz Show</h2>
+        <p class="text-gray-500 mb-2 text-lg">15 questions • Speed-based scoring • Team rankings!</p>
+        <p class="text-gray-400 mb-8 text-sm">The fastest correct answer wins the most points (up to 1,000 per question).</p>
+
+        <div class="max-w-md mx-auto text-left">
+          <label for="player-input" class="block text-sm font-semibold text-gray-700 mb-2">👥 Add Team Members</label>
+          <div class="flex gap-2 mb-4">
+            <input id="player-input" type="text" placeholder="Enter name..."
+              class="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-700 focus:border-walmart-blue focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+              maxlength="20" autocomplete="off" />
+            <button onclick="addPlayer()"
+              class="bg-walmart-spark hover:bg-yellow-500 text-gray-900 font-bold px-5 py-3 rounded-xl shadow-md transition-all focus:outline-none focus:ring-4 focus:ring-yellow-300"
+              aria-label="Add team member">Add</button>
+          </div>
+          <div id="player-list" class="space-y-2 mb-6">
+            <p class="text-gray-400 text-sm text-center py-4">No team members yet — add at least 2!</p>
+          </div>
+        </div>
+
+        <button id="start-btn" onclick="startQuiz()" disabled
+          class="bg-walmart-blue hover:bg-walmart-blueHover text-white font-bold py-4 px-10 rounded-xl text-lg shadow-md hover:shadow-lg transition-all opacity-50 cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-blue-300"
+          aria-label="Start the quiz">
+          Start Quiz Show! 🚀
+        </button>
+      </div>
+    </div>
+
+    <!-- Quiz Screen -->
+    <div id="quiz-screen" class="hidden">
+      <!-- Progress Bar -->
+      <div class="mb-6">
+        <div class="flex justify-between text-sm text-gray-500 mb-1.5">
+          <span>Question <span id="q-current">1</span> of <span id="q-total">15</span></span>
+          <span id="category-badge" class="bg-walmart-blue/10 text-walmart-blue px-3 py-0.5 rounded-full text-xs font-semibold"></span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden" role="progressbar">
+          <div id="progress-bar" class="progress-fill bg-walmart-blue h-3 rounded-full" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Question Card -->
+      <div id="question-card" class="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 fade-in">
+        <!-- Timer -->
+        <div class="flex items-center justify-between mb-6">
+          <h3 id="question-text" class="text-xl font-bold text-gray-800 leading-relaxed flex-1 pr-4"></h3>
+          <div id="timer-ring" class="timer-ring flex-shrink-0" style="background: conic-gradient(#0053e2 100%, #e5e7eb 100%)">
+            <div class="w-[58px] h-[58px] rounded-full bg-white flex items-center justify-center">
+              <span id="timer-display" class="text-lg font-black text-gray-800">15</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Buzzer Section: Who's answering? -->
+        <div id="buzzer-section">
+          <p class="text-center text-gray-500 font-medium mb-4">🔔 Who knows the answer? Buzz in!</p>
+          <div id="buzzer-buttons" class="flex flex-wrap justify-center gap-3"></div>
+        </div>
+
+        <!-- Answer Section: Shown after someone buzzes in -->
+        <div id="answer-section" class="hidden">
+          <div class="bg-walmart-blue/5 rounded-xl px-4 py-3 mb-5 flex items-center justify-between">
+            <span class="font-bold text-walmart-blue">🖐️ <span id="buzzed-player-name"></span> buzzed in!</span>
+            <span class="text-sm text-gray-500">⏱ <span id="buzz-time"></span>s</span>
+          </div>
+          <div id="options-container" class="space-y-3" role="radiogroup" aria-label="Answer options"></div>
+        </div>
+
+        <div id="feedback" class="mt-6 hidden rounded-xl p-4 text-sm font-medium"></div>
+
+        <div id="next-container" class="mt-6 hidden text-right">
+          <button onclick="nextQuestion()"
+            class="bg-walmart-blue hover:bg-walmart-blueHover text-white font-bold py-3 px-8 rounded-xl shadow-md hover:shadow-lg transition-all focus:outline-none focus:ring-4 focus:ring-blue-300">
+            Next →
+          </button>
+        </div>
+      </div>
+
+      <!-- Mini Leaderboard -->
+      <div class="hidden mt-4 bg-white rounded-xl shadow p-4 border border-gray-100">
+        <h4 class="text-sm font-bold text-gray-600 mb-2">🏅 Live Standings</h4>
+        <div id="mini-leaderboard"></div>
+      </div>
+    </div>
+
+    <!-- Results Screen -->
+    <div id="results-screen" class="hidden"></div>
+  </main>
+
+  <footer class="text-center text-gray-400 text-xs py-6">Made with 🐶 by Cute Puppy &bull; Walmart 2026</footer>
+
+  <script src="questions.js"></script>
+  <script src="quiz-engine.js"></script>
+</body>
+</html>
