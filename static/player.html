@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player - Know Your Walmart!</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: {
+      walmart: { blue: '#0053e2', blueHover: '#004ac7', spark: '#ffc220' }
+    }}}}
+  </script>
+  <style>
+    @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.06)} 100%{transform:scale(1)} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .fade-in { animation: fadeIn 0.35s ease-out; }
+    .pop { animation: pop 0.3s ease-out; }
+    .pulse { animation: pulse 1.5s ease-in-out infinite; }
+    .option-btn { transition: all 0.15s ease; }
+    .option-btn:active:not(:disabled) { transform: scale(0.97); }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+  <header class="bg-walmart-blue text-white py-3 shadow-lg">
+    <div class="max-w-lg mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-walmart-spark text-2xl">&#10022;</span>
+        <h1 class="text-lg font-bold">Know Your Walmart!</h1>
+      </div>
+      <div id="player-badge" class="hidden text-sm bg-white/15 rounded-full px-3 py-1"></div>
+    </div>
+  </header>
+
+  <main class="max-w-lg mx-auto px-4 py-6 flex-1 w-full">
+
+    <!-- Join Screen -->
+    <div id="join-screen" class="fade-in">
+      <div class="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 text-center">
+        <div class="text-5xl mb-4">&#128075;</div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-1">Join the Game!</h2>
+        <p class="text-gray-400 text-sm mb-6">Room: <span class="font-mono font-bold text-walmart-blue" id="room-display"></span></p>
+        <input id="name-input" type="text" placeholder="Your name" maxlength="20" autocomplete="off"
+          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg text-center focus:border-walmart-blue focus:outline-none focus:ring-4 focus:ring-blue-100 mb-4" />
+        <button onclick="joinGame()"
+          class="w-full bg-walmart-blue hover:bg-walmart-blueHover text-white font-bold py-4 rounded-xl text-lg shadow-md transition-all focus:outline-none focus:ring-4 focus:ring-blue-300">
+          Join!
+        </button>
+        <p id="join-error" class="text-red-500 text-sm mt-3 hidden"></p>
+      </div>
+    </div>
+
+    <!-- Waiting in Lobby -->
+    <div id="waiting-screen" class="hidden fade-in">
+      <div class="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 text-center">
+        <div class="text-5xl mb-4 pulse">&#9203;</div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">You're In!</h2>
+        <p class="text-gray-500">Waiting for the host to start...</p>
+        <div id="lobby-list" class="mt-4 space-y-1"></div>
+      </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="hidden">
+      <!-- Question Info -->
+      <div class="mb-4">
+        <div class="flex justify-between text-sm text-gray-500 mb-1">
+          <span>Q<span id="q-num">1</span>/<span id="q-total">15</span></span>
+          <span id="cat-badge" class="bg-walmart-blue/10 text-walmart-blue px-2 py-0.5 rounded-full text-xs font-semibold"></span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+          <div id="progress" class="bg-walmart-blue h-2 rounded-full transition-all" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Question + Options -->
+      <div id="q-card" class="bg-white rounded-xl shadow p-5 border border-gray-100 mb-4 fade-in">
+        <h3 id="q-text" class="text-lg font-bold text-gray-800 leading-relaxed mb-5"></h3>
+        <div id="options" class="space-y-3"></div>
+      </div>
+
+      <!-- Score popup (shown right after answering) -->
+      <div id="score-popup" class="hidden">
+        <div id="score-popup-content" class="rounded-xl p-5 text-center pop"></div>
+      </div>
+
+      <!-- Feedback from reveal -->
+      <div id="feedback" class="hidden rounded-xl p-4 text-sm font-medium mt-4"></div>
+
+      <!-- Waiting for next Q -->
+      <div id="wait-next" class="hidden mt-4 text-center">
+        <p class="text-gray-400 text-sm pulse">Waiting for next question...</p>
+      </div>
+
+      <!-- Score display -->
+      <div id="my-score-bar" class="mt-4 bg-white rounded-xl shadow p-3 border border-gray-100 flex items-center justify-between">
+        <span class="text-sm font-medium text-gray-600">Your Score</span>
+        <span id="my-score" class="font-black text-walmart-blue text-lg">0</span>
+      </div>
+    </div>
+
+    <!-- Final Results -->
+    <div id="results-screen" class="hidden"></div>
+  </main>
+
+  <script>
+    const roomCode = location.pathname.split('/').pop().toUpperCase();
+    document.getElementById('room-display').textContent = roomCode;
+    let ws, myName, myScore = 0, hasAnswered = false;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host + '/ws/player/' + roomCode);
+      ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+      ws.onclose = () => setTimeout(connect, 2000);
+    }
+
+    function sendMsg(msg) { ws.send(JSON.stringify(msg)); }
+
+    function joinGame() {
+      const name = document.getElementById('name-input').value.trim();
+      if (!name) return;
+      myName = name;
+      sendMsg({ type: 'join', name });
+    }
+
+    function submitAnswer(option) {
+      if (hasAnswered) return;
+      hasAnswered = true;
+      sendMsg({ type: 'answer', option });
+      // Disable all buttons immediately
+      document.querySelectorAll('.option-btn').forEach(b => {
+        b.disabled = true;
+        b.classList.remove('hover:border-walmart-blue','hover:bg-blue-50');
+        b.classList.add('opacity-60');
+      });
+      // Highlight selected
+      const selected = document.getElementById('opt-' + option);
+      if (selected) {
+        selected.classList.remove('opacity-60','border-gray-200','bg-gray-50');
+        selected.classList.add('border-walmart-blue','bg-blue-50','ring-2','ring-blue-200');
+      }
+    }
+
+    function handleMessage(msg) {
+      switch (msg.type) {
+        case 'joined':
+          document.getElementById('join-screen').classList.add('hidden');
+          document.getElementById('waiting-screen').classList.remove('hidden');
+          document.getElementById('player-badge').textContent = msg.name;
+          document.getElementById('player-badge').classList.remove('hidden');
+          break;
+
+        case 'error':
+          const err = document.getElementById('join-error');
+          err.textContent = msg.message; err.classList.remove('hidden');
+          break;
+
+        case 'player_joined':
+          // Update lobby list
+          const list = document.getElementById('lobby-list');
+          if (list && msg.players) {
+            list.innerHTML = msg.players.map(n =>
+              '<span class="inline-block text-xs bg-walmart-blue/10 text-walmart-blue px-2 py-1 rounded-full font-medium mr-1 mb-1">'+n+'</span>'
+            ).join('');
+          }
+          break;
+
+        case 'game_started':
+          document.getElementById('waiting-screen').classList.add('hidden');
+          document.getElementById('game-screen').classList.remove('hidden');
+          break;
+
+        case 'question': showQuestion(msg); break;
+        case 'your_result': showMyResult(msg); break;
+        case 'player_answered': break; // Host handles this
+        case 'question_reveal': showReveal(msg); break;
+        case 'game_over': showFinalResults(msg.rankings); break;
+      }
+    }
+
+    function showQuestion(q) {
+      hasAnswered = false;
+      document.getElementById('q-num').textContent = q.qNumber;
+      document.getElementById('q-total').textContent = q.total;
+      document.getElementById('progress').style.width = ((q.qNumber-1)/q.total*100)+'%';
+      document.getElementById('cat-badge').textContent = q.category;
+      document.getElementById('q-text').textContent = q.question;
+      document.getElementById('score-popup').classList.add('hidden');
+      document.getElementById('feedback').classList.add('hidden');
+      document.getElementById('wait-next').classList.add('hidden');
+
+      const labels = ['A','B','C','D'];
+      document.getElementById('options').innerHTML = q.options.map((opt, i) =>
+        '<button id="opt-'+i+'" onclick="submitAnswer('+i+')"'
+        + ' class="option-btn w-full text-left px-4 py-3.5 rounded-xl border-2 border-gray-200 bg-gray-50 hover:border-walmart-blue hover:bg-blue-50 font-medium text-gray-700 flex items-center gap-3 focus:outline-none focus:ring-4 focus:ring-blue-200">'
+        + '<span class="flex-shrink-0 w-8 h-8 rounded-lg bg-walmart-blue/10 text-walmart-blue font-bold flex items-center justify-center text-sm">'+labels[i]+'</span>'
+        + '<span>'+opt+'</span></button>'
+      ).join('');
+
+      const card = document.getElementById('q-card');
+      card.classList.remove('fade-in'); void card.offsetWidth; card.classList.add('fade-in');
+    }
+
+    function showMyResult(msg) {
+      const popup = document.getElementById('score-popup');
+      const content = document.getElementById('score-popup-content');
+      popup.classList.remove('hidden');
+
+      if (msg.correct) {
+        myScore += msg.points;
+        document.getElementById('my-score').textContent = myScore;
+        const ordinal = msg.rank === 1 ? '1st' : msg.rank === 2 ? '2nd' : msg.rank === 3 ? '3rd' : msg.rank+'th';
+        content.className = 'rounded-xl p-5 text-center pop bg-green-50 border border-green-200';
+        content.innerHTML =
+          '<div class="text-3xl mb-1">&#10004;&#65039;</div>'
+          + '<div class="text-green-800 font-bold text-lg">Correct! +'+msg.points+' pts</div>'
+          + '<div class="text-green-600 text-sm">'+ordinal+' to answer correctly</div>';
+      } else {
+        content.className = 'rounded-xl p-5 text-center pop bg-red-50 border border-red-200';
+        content.innerHTML =
+          '<div class="text-3xl mb-1">&#10060;</div>'
+          + '<div class="text-red-800 font-bold text-lg">Wrong!</div>'
+          + '<div class="text-red-600 text-sm">Correct: '+msg.correctText+'</div>';
+      }
+
+      // Highlight correct/wrong in options
+      const correctEl = document.getElementById('opt-'+msg.correctAnswer);
+      if (correctEl) {
+        correctEl.classList.remove('border-gray-200','bg-gray-50','opacity-60');
+        correctEl.classList.add('border-green-500','bg-green-50','text-green-800');
+        const sp = correctEl.querySelector('span');
+        if(sp){sp.classList.remove('bg-walmart-blue/10','text-walmart-blue');sp.classList.add('bg-green-500','text-white');}
+      }
+    }
+
+    function showReveal(msg) {
+      const fb = document.getElementById('feedback');
+      fb.classList.remove('hidden','bg-green-50','text-green-800','border-green-200');
+      fb.classList.add('bg-blue-50','text-blue-800','border','border-blue-200');
+      fb.innerHTML = '<strong>'+msg.correctText+'</strong> &mdash; '+msg.explanation;
+      document.getElementById('wait-next').classList.remove('hidden');
+    }
+
+    function showFinalResults(rankings) {
+      document.getElementById('game-screen').classList.add('hidden');
+      const rv = document.getElementById('results-screen');
+      rv.classList.remove('hidden');
+
+      const medals = ['&#129351;','&#129352;','&#129353;'];
+      const myRank = rankings.findIndex(p => p.name === myName);
+      const myData = rankings[myRank] || {score:0,correct:0,total:15};
+
+      let title, emoji;
+      if (myRank === 0) { emoji = '&#127942;'; title = 'You Won!'; }
+      else if (myRank === 1) { emoji = '&#129352;'; title = '2nd Place!'; }
+      else if (myRank === 2) { emoji = '&#129353;'; title = '3rd Place!'; }
+      else { emoji = '&#128079;'; title = '#'+(myRank+1)+' - Great Effort!'; }
+
+      rv.innerHTML =
+        '<div class="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 text-center mb-4 fade-in">'
+        + '<div class="text-5xl mb-3">'+emoji+'</div>'
+        + '<h2 class="text-2xl font-bold text-gray-800 mb-1">'+title+'</h2>'
+        + '<div class="text-walmart-blue font-black text-3xl mb-1">'+myData.score+' pts</div>'
+        + '<p class="text-gray-500 text-sm">'+myData.correct+'/'+myData.total+' correct</p></div>'
+        + '<div class="bg-white rounded-2xl shadow-lg p-5 border border-gray-100 fade-in">'
+        + '<h3 class="font-bold text-gray-700 mb-3">Full Rankings</h3>'
+        + rankings.map((p,i) => {
+            const m = i<3 ? medals[i] : '#'+(i+1);
+            const isMe = p.name === myName;
+            return '<div class="flex items-center justify-between py-2 '
+              + (isMe ? 'bg-walmart-blue/5 -mx-2 px-2 rounded-lg font-bold ' : '')
+              + (i<rankings.length-1 ? 'border-b border-gray-100' : '') + '">'
+              + '<span class="text-gray-700">'+m+' '+p.name+(isMe?' (you)':'')+'</span>'
+              + '<span class="text-walmart-blue font-bold">'+p.score+'</span></div>';
+          }).join('')
+        + '</div>'
+        + '<div class="text-center mt-4"><a href="/" class="text-walmart-blue font-bold hover:underline">Back to Home</a></div>';
+    }
+
+    document.getElementById('name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') joinGame();
+    });
+
+    connect();
+  </script>
+</body>
+</html>
