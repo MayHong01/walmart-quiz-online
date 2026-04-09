@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Host - Know Your Walmart!</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: {
+      walmart: { blue: '#0053e2', blueHover: '#004ac7', blueDark: '#003a99', spark: '#ffc220' }
+    }}}}
+  </script>
+  <style>
+    @keyframes fadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.1)} 100%{transform:scale(1)} }
+    @keyframes confetti { 0%{opacity:1;transform:translateY(0) rotate(0deg)} 100%{opacity:0;transform:translateY(400px) rotate(720deg)} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .fade-in { animation: fadeIn 0.4s ease-out; }
+    .pop { animation: pop 0.3s ease-out; }
+    .pulse { animation: pulse 1.5s ease-in-out infinite; }
+    .confetti-piece { position:fixed;width:10px;height:10px;top:-10px;animation:confetti 3s ease-out forwards;pointer-events:none;z-index:100; }
+    .progress-fill { transition: width 0.5s ease; }
+    .timer-ring { width:90px;height:90px;border-radius:50%;display:flex;align-items:center;justify-content:center; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <header class="bg-walmart-blue text-white py-4 shadow-lg">
+    <div class="max-w-4xl mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-walmart-spark text-3xl">&#10022;</span>
+        <h1 class="text-2xl font-bold">Know Your Walmart!</h1>
+      </div>
+      <div id="room-badge" class="bg-white/15 rounded-full px-4 py-1.5 font-mono font-bold tracking-widest"></div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <!-- Lobby -->
+    <div id="lobby" class="fade-in">
+      <div class="bg-white rounded-2xl shadow-lg p-10 border border-gray-100 text-center">
+        <div class="text-6xl mb-4">&#128225;</div>
+        <h2 class="text-3xl font-bold text-gray-800 mb-2">Waiting for Players</h2>
+        <p class="text-gray-500 mb-2">Share this code with your team:</p>
+        <div id="room-code-big" class="text-5xl font-black text-walmart-blue tracking-[0.3em] mb-2"></div>
+        <p id="join-url" class="text-gray-400 text-sm mb-8 font-mono"></p>
+        <div class="max-w-md mx-auto mb-8">
+          <h3 class="text-sm font-bold text-gray-600 mb-3 text-left">Players Joined:</h3>
+          <div id="lobby-players" class="space-y-2">
+            <p class="text-gray-400 text-sm text-center py-4 pulse">Waiting for players...</p>
+          </div>
+        </div>
+        <button id="start-btn" onclick="sendMsg({type:'start_game'})" disabled
+          class="bg-walmart-blue hover:bg-walmart-blueHover text-white font-bold py-4 px-10 rounded-xl text-lg shadow-md transition-all opacity-50 cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-blue-300">
+          Start Quiz!
+        </button>
+        <p id="min-msg" class="text-gray-400 text-xs mt-2">Need at least 2 players</p>
+      </div>
+    </div>
+
+    <!-- Question View -->
+    <div id="question-view" class="hidden">
+      <div class="mb-6">
+        <div class="flex justify-between text-sm text-gray-500 mb-1.5">
+          <span>Question <span id="q-num">1</span> of <span id="q-total">15</span></span>
+          <span id="cat-badge" class="bg-walmart-blue/10 text-walmart-blue px-3 py-0.5 rounded-full text-xs font-semibold"></span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+          <div id="progress-bar" class="progress-fill bg-walmart-blue h-3 rounded-full" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div id="q-card" class="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 fade-in">
+        <div class="flex items-start justify-between mb-6">
+          <h3 id="q-text" class="text-2xl font-bold text-gray-800 leading-relaxed flex-1 pr-6"></h3>
+          <div id="timer-ring" class="timer-ring flex-shrink-0" style="background:conic-gradient(#0053e2 100%,#e5e7eb 100%)">
+            <div class="w-[78px] h-[78px] rounded-full bg-white flex items-center justify-center">
+              <span id="timer" class="text-2xl font-black text-gray-800">20</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Options (read-only for host) -->
+        <div id="options-display" class="space-y-3 mb-6"></div>
+
+        <!-- Answer progress -->
+        <div id="answer-progress" class="border-t border-gray-100 pt-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-semibold text-gray-600">Answers received:</span>
+            <span class="text-sm text-gray-500"><span id="ans-count">0</span> / <span id="ans-total">0</span></span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div id="ans-bar" class="bg-walmart-spark h-2 rounded-full transition-all" style="width:0%"></div>
+          </div>
+          <div id="answered-names" class="flex flex-wrap gap-2 mt-3"></div>
+        </div>
+
+        <!-- Reveal section (shown after all answer or time up) -->
+        <div id="reveal-section" class="hidden mt-6 border-t border-gray-100 pt-6">
+          <div id="reveal-feedback" class="rounded-xl p-4 text-sm font-medium bg-green-50 text-green-800 border border-green-200 mb-4"></div>
+          <div id="reveal-results" class="space-y-2 mb-4"></div>
+        </div>
+
+        <div id="next-btn-container" class="hidden mt-6 text-right">
+          <button id="next-btn" onclick="sendMsg({type:'next_question'})"
+            class="bg-walmart-blue hover:bg-walmart-blueHover text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all focus:outline-none focus:ring-4 focus:ring-blue-300">
+            Next Question &#8594;
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Leaderboard -->
+      <div id="leaderboard-panel" class="hidden mt-4 bg-white rounded-xl shadow p-4 border border-gray-100">
+        <h4 class="text-sm font-bold text-gray-600 mb-2">Live Standings</h4>
+        <div id="leaderboard"></div>
+      </div>
+    </div>
+
+    <!-- Final Results -->
+    <div id="results-view" class="hidden"></div>
+  </main>
+
+  <footer class="text-center text-gray-400 text-xs py-6">Made with Cute Puppy - Walmart 2026</footer>
+
+  <script>
+    const roomCode = location.pathname.split('/').pop().toUpperCase();
+    document.getElementById('room-badge').textContent = 'Room: ' + roomCode;
+    document.getElementById('room-code-big').textContent = roomCode;
+
+    let ws, timerInterval, timerStart, timerExpired = false;
+    const TIME_LIMIT = 20;
+    let totalPlayers = 0;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host + '/ws/host/' + roomCode);
+      ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+      ws.onclose = () => setTimeout(connect, 2000);
+    }
+
+    function sendMsg(msg) { ws.send(JSON.stringify(msg)); }
+
+    function handleMessage(msg) {
+      switch (msg.type) {
+        case 'room_created':
+          fetch('/api/ip').then(r=>r.json()).then(d => {
+            document.getElementById('join-url').textContent =
+              'Go to http://' + d.ip + ':' + (location.port||8899) + ' and enter code ' + roomCode;
+          });
+          if (msg.players.length > 0) renderLobbyPlayers(msg.players);
+          break;
+        case 'player_joined': renderLobbyPlayers(msg.players); break;
+        case 'game_started':
+          document.getElementById('lobby').classList.add('hidden');
+          document.getElementById('question-view').classList.remove('hidden');
+          break;
+        case 'question': showQuestion(msg); break;
+        case 'player_answered': updateProgress(msg); break;
+        case 'question_reveal': showReveal(msg); break;
+        case 'game_over': showFinalResults(msg.rankings); break;
+      }
+    }
+
+    function renderLobbyPlayers(players) {
+      const el = document.getElementById('lobby-players');
+      el.innerHTML = players.length === 0
+        ? '<p class="text-gray-400 text-sm text-center py-4 pulse">Waiting for players...</p>'
+        : players.map(n =>
+          '<div class="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-2.5 border border-gray-100 fade-in">'
+          + '<span class="w-8 h-8 rounded-full bg-walmart-blue text-white font-bold flex items-center justify-center text-sm">' + n[0].toUpperCase() + '</span>'
+          + '<span class="font-medium text-gray-700">' + n + '</span></div>'
+        ).join('');
+      const ready = players.length >= 2;
+      const btn = document.getElementById('start-btn');
+      btn.disabled = !ready;
+      btn.classList.toggle('opacity-50', !ready);
+      btn.classList.toggle('cursor-not-allowed', !ready);
+      document.getElementById('min-msg').classList.toggle('hidden', ready);
+    }
+
+    function showQuestion(q) {
+      timerExpired = false;
+      totalPlayers = q.totalPlayers || totalPlayers;
+      document.getElementById('q-num').textContent = q.qNumber;
+      document.getElementById('q-total').textContent = q.total;
+      document.getElementById('progress-bar').style.width = ((q.qNumber-1)/q.total*100)+'%';
+      document.getElementById('cat-badge').textContent = q.category;
+      document.getElementById('q-text').textContent = q.question;
+      document.getElementById('reveal-section').classList.add('hidden');
+      document.getElementById('next-btn-container').classList.add('hidden');
+      document.getElementById('answer-progress').classList.remove('hidden');
+      document.getElementById('ans-count').textContent = '0';
+      document.getElementById('ans-bar').style.width = '0%';
+      document.getElementById('answered-names').innerHTML = '';
+
+      const labels = ['A','B','C','D'];
+      document.getElementById('options-display').innerHTML = q.options.map((opt, i) =>
+        '<div id="opt-'+i+'" class="flex items-center gap-4 px-5 py-4 rounded-xl border-2 border-gray-200 bg-gray-50">'
+        + '<span class="flex-shrink-0 w-9 h-9 rounded-lg bg-walmart-blue/10 text-walmart-blue font-bold flex items-center justify-center text-sm">'+labels[i]+'</span>'
+        + '<span class="font-medium text-gray-700">'+opt+'</span></div>'
+      ).join('');
+
+      timerStart = Date.now();
+      clearInterval(timerInterval);
+      timerInterval = setInterval(updateTimer, 100);
+
+      const card = document.getElementById('q-card');
+      card.classList.remove('fade-in'); void card.offsetWidth; card.classList.add('fade-in');
+    }
+
+    function updateTimer() {
+      const elapsed = (Date.now()-timerStart)/1000;
+      const remaining = Math.max(0, TIME_LIMIT-elapsed);
+      const display = document.getElementById('timer');
+      display.textContent = remaining.toFixed(1);
+      display.classList.toggle('text-red-500', remaining <= 5);
+      const pct = (remaining/TIME_LIMIT)*100;
+      document.getElementById('timer-ring').style.background =
+        'conic-gradient(#0053e2 '+pct+'%, #e5e7eb '+pct+'%)';
+      if (remaining <= 0 && !timerExpired) {
+        timerExpired = true;
+        clearInterval(timerInterval);
+        sendMsg({type:'time_up'});
+      }
+    }
+
+    function updateProgress(msg) {
+      document.getElementById('ans-count').textContent = msg.answeredCount;
+      document.getElementById('ans-total').textContent = msg.totalPlayers;
+      const pct = (msg.answeredCount/msg.totalPlayers)*100;
+      document.getElementById('ans-bar').style.width = pct+'%';
+      const names = document.getElementById('answered-names');
+      names.innerHTML += '<span class="text-xs bg-walmart-blue/10 text-walmart-blue px-2 py-1 rounded-full font-medium pop">'
+        + msg.player + ' &#10003;</span>';
+    }
+
+    function showReveal(msg) {
+      clearInterval(timerInterval);
+      document.getElementById('answer-progress').classList.add('hidden');
+
+      // Highlight correct answer
+      const el = document.getElementById('opt-'+msg.correctAnswer);
+      if (el) {
+        el.classList.remove('border-gray-200','bg-gray-50');
+        el.classList.add('border-green-500','bg-green-50','text-green-800','pop');
+        const sp = el.querySelector('span');
+        if(sp){sp.classList.remove('bg-walmart-blue/10','text-walmart-blue'); sp.classList.add('bg-green-500','text-white');}
+      }
+
+      // Feedback
+      document.getElementById('reveal-feedback').innerHTML =
+        '<strong>Correct: '+msg.correctText+'</strong> &mdash; '+msg.explanation;
+
+      // Results per player
+      const medals = ['&#129351;','&#129352;','&#129353;'];
+      const resultsHTML = msg.results
+        .sort((a,b) => b.points - a.points || a.rank - b.rank)
+        .map(r => {
+          if (r.points > 0) {
+            const m = r.rank <= 3 ? medals[r.rank-1] : '#'+r.rank;
+            return '<div class="flex items-center justify-between bg-green-50 rounded-lg px-4 py-2 border border-green-200 fade-in">'
+              + '<span class="font-medium text-green-800">'+m+' '+r.name+'</span>'
+              + '<span class="font-bold text-green-700">+'+r.points+' pts</span></div>';
+          }
+          return '<div class="flex items-center justify-between bg-red-50 rounded-lg px-4 py-2 border border-red-200 fade-in">'
+            + '<span class="font-medium text-red-700">'+r.name+'</span>'
+            + '<span class="text-red-500 text-sm">0 pts</span></div>';
+        }).join('');
+      document.getElementById('reveal-results').innerHTML = resultsHTML;
+      document.getElementById('reveal-section').classList.remove('hidden');
+
+      // Leaderboard
+      updateLeaderboard(msg.leaderboard);
+
+      // Next button
+      document.getElementById('next-btn-container').classList.remove('hidden');
+    }
+
+    function updateLeaderboard(lb) {
+      const medals = ['&#129351;','&#129352;','&#129353;'];
+      document.getElementById('leaderboard').innerHTML = lb.map((p,i) => {
+        const m = i<3 ? medals[i] : '#'+(i+1);
+        return '<div class="flex items-center justify-between text-sm py-1.5 '+(i<lb.length-1?'border-b border-gray-100':'')+'">' +
+          '<span class="font-medium text-gray-700">'+m+' '+p.name+'</span>' +
+          '<span class="font-bold text-walmart-blue">'+p.score+' pts</span></div>';
+      }).join('');
+      document.getElementById('leaderboard-panel').classList.remove('hidden');
+    }
+
+    function showFinalResults(rankings) {
+      clearInterval(timerInterval);
+      document.getElementById('question-view').classList.add('hidden');
+      const rv = document.getElementById('results-view');
+      rv.classList.remove('hidden');
+
+      const medals = ['&#129351;','&#129352;','&#129353;'];
+      const podColors = ['from-yellow-400 to-yellow-500','from-gray-300 to-gray-400','from-amber-600 to-amber-700'];
+      const heights = ['h-44','h-32','h-24'];
+      const top3 = rankings.slice(0,3);
+      const orders = ['order-2','order-1','order-3'];
+
+      const podiumHTML = top3.map((p,i) =>
+        '<div class="flex flex-col items-center '+orders[i]+'">'
+        + '<div class="text-5xl mb-2">'+medals[i]+'</div>'
+        + '<div class="font-bold text-gray-800 text-xl mb-1">'+p.name+'</div>'
+        + '<div class="text-walmart-blue font-black text-2xl mb-3">'+p.score+'</div>'
+        + '<div class="w-28 '+heights[i]+' rounded-t-xl bg-gradient-to-b '+podColors[i]+' flex items-end justify-center pb-3">'
+        + '<span class="text-white font-bold text-3xl">'+(i+1)+'</span></div></div>'
+      ).join('');
+
+      const rankHTML = rankings.map((p,i) => {
+        const m = i<3 ? medals[i] : '<span class="text-gray-400 font-bold">#'+(i+1)+'</span>';
+        const avgT = p.avgTime ? p.avgTime+'s' : '---';
+        const acc = Math.round((p.correct/p.total)*100);
+        const barW = rankings[0].score > 0 ? (p.score/rankings[0].score*100) : 0;
+        return '<div class="flex items-center gap-4 py-3 '+(i<rankings.length-1?'border-b border-gray-100':'')+'">' +
+          '<div class="w-10 text-center text-lg">'+m+'</div>' +
+          '<div class="flex-1">' +
+          '<div class="flex items-center justify-between mb-1">' +
+          '<span class="font-bold text-gray-800">'+p.name+'</span>' +
+          '<span class="font-black text-walmart-blue">'+p.score+' pts</span></div>' +
+          '<div class="w-full bg-gray-100 rounded-full h-2 mb-1">' +
+          '<div class="bg-walmart-blue h-2 rounded-full" style="width:'+barW+'%"></div></div>' +
+          '<div class="flex gap-4 text-xs text-gray-500">' +
+          '<span>Correct: '+p.correct+'/'+p.total+' ('+acc+'%)</span>' +
+          '<span>Avg: '+avgT+'</span></div></div></div>';
+      }).join('');
+
+      rv.innerHTML =
+        '<div class="bg-white rounded-2xl shadow-lg p-10 border border-gray-100 text-center mb-6 fade-in">'
+        + '<div class="text-6xl mb-4">&#127942;</div>'
+        + '<h2 class="text-3xl font-bold text-gray-800 mb-2">Final Rankings</h2>'
+        + '<p class="text-gray-500 mb-8">Great game, everyone!</p>'
+        + '<div class="flex items-end justify-center gap-8 mb-8">'+podiumHTML+'</div></div>'
+        + '<div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 mb-6 fade-in">'
+        + '<h3 class="text-lg font-bold text-gray-800 mb-4">Full Leaderboard</h3>'
+        + rankHTML + '</div>'
+        + '<div class="text-center"><a href="/" class="text-walmart-blue font-bold hover:underline">Back to Home</a></div>';
+
+      launchConfetti();
+    }
+
+    function launchConfetti() {
+      const colors = ['#0053e2','#ffc220','#ea1100','#2a8703','#ffffff'];
+      for (let i = 0; i < 80; i++) {
+        const p = document.createElement('div');
+        p.className = 'confetti-piece';
+        p.style.left = Math.random()*100+'vw';
+        p.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
+        p.style.animationDelay = Math.random()*2+'s';
+        p.style.animationDuration = (2+Math.random()*2)+'s';
+        p.style.borderRadius = Math.random()>.5?'50%':'2px';
+        p.style.width = (6+Math.random()*8)+'px';
+        p.style.height = (6+Math.random()*8)+'px';
+        document.body.appendChild(p);
+        setTimeout(()=>p.remove(),5000);
+      }
+    }
+
+    connect();
+  </script>
+</body>
+</html>
